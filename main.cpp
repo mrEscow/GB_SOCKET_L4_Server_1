@@ -15,17 +15,22 @@ SOCKET Connections[100];
 int ClientCount = 0;
 
 void ClientHandle(int index){
-    char msg[256];
-
+    int SizeClientMsg;
     while(true){
-        recv(Connections[index],msg,sizeof(msg),NULL);
+        recv(Connections[index], (char*)&SizeClientMsg, sizeof(int), NULL);
+        char* msg = new char[SizeClientMsg + 1];
+        msg[SizeClientMsg] = '\0';
+        recv(Connections[index], msg, SizeClientMsg, NULL);
 
         for(int i=0;i<ClientCount;i++){
             if(i==index){
                 continue;
             }
-            send(Connections[i],msg,sizeof(msg),NULL);
+            send(Connections[i], (char*)SizeClientMsg, sizeof(int),NULL);
+            send(Connections[i], msg, SizeClientMsg, NULL);
         }
+
+        delete[] msg;
     }
 }
 
@@ -62,8 +67,12 @@ int main(int argc, char *argv[])
         }
         else{
             qDebug() << "Client Connection";
-            char msg[256] = "Hello from Server";
-            send(newConnection, msg,sizeof(msg), NULL);
+
+            QString msg = "Hello from Server";
+            int SizeMsg = msg.size();
+
+            send(newConnection,(char*)SizeMsg,sizeof(int),NULL);
+            send(newConnection, msg.toStdString().c_str(),SizeMsg, NULL);
 
             Connections[i] = newConnection;
             ClientCount++;
