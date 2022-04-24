@@ -1,4 +1,5 @@
-QT       += core
+QT       -= gui
+#QT       += core
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -7,7 +8,8 @@ LIBS += D:\Qt\QT6\Tools\mingw1120_64\x86_64-w64-mingw32\lib\libws2_32.a
 #INCLUDEPATH += socket_wrapper/include
 
 
-CONFIG += c++17
+CONFIG += c++17 console
+CONFIG -= app_bundle
 #CONFIG += staticlib
 
 
