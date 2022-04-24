@@ -1,8 +1,15 @@
-QT       += core gui
+QT       += core
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
+#LIBS += ws2_32.lib
+LIBS += D:\Qt\QT6\Tools\mingw1120_64\x86_64-w64-mingw32\lib\libws2_32.a
+#INCLUDEPATH += socket_wrapper/include
+
+
 CONFIG += c++17
+#CONFIG += staticlib
+
 
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
@@ -10,13 +17,12 @@ CONFIG += c++17
 
 SOURCES += \
     main.cpp \
-    mainwindow.cpp
+
 
 HEADERS += \
-    mainwindow.h
 
-FORMS += \
-    mainwindow.ui
+
+FORMS +=
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
