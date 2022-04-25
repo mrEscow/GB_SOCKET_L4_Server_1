@@ -14,6 +14,45 @@
 SOCKET Connections[100];
 int ClientCount = 0;
 
+static bool need_to_repeat()
+{
+    switch (errno)
+    {
+    case EINTR:
+    case EAGAIN:
+    // case EWOULDBLOCK: // EWOULDBLOCK == EINTR.
+    return true;
+    }
+
+return false;
+};
+
+
+bool send_buffer(const std::vector<char> &buffer,int index)
+{
+    size_t transmit_bytes_count = 0;
+    const auto size = buffer.size();
+    while (transmit_bytes_count != size)
+    {
+        auto result = send(
+                    Connections[index],
+                    &(buffer.data()[0]) + transmit_bytes_count,
+                    size - transmit_bytes_count,
+                    NULL);
+
+        if (-1 == result)
+        {
+            if (need_to_repeat()) continue;
+            return false;
+        }
+
+    transmit_bytes_count += result;
+
+    }
+    return true;
+}
+
+
 void ClientHandle(int index){
     int SizeClientMsg;
     while(true){
