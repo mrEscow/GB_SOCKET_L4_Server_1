@@ -7,6 +7,7 @@
 
 #include <QApplication>
 #include <winsock2.h>
+#include <WS2tcpip.h>
 #include <QDebug>
 #include <thread>
 
@@ -29,12 +30,14 @@ const auto buffer_size = 4096;
 using namespace std::literals;
 namespace fs = std::filesystem;
 
+int test_count{0};
+
 //------------------------------------------------------------------------------------
 class Transceiver{
 public:
 
-    Transceiver(SOCKET &&client_sock) :
-    client_sock_(std::move(client_sock)) {}
+    Transceiver(const SOCKET &client_sock) :
+    client_sock_(client_sock) {}
     Transceiver() = delete;
 
 
@@ -132,12 +135,13 @@ private:
 class Client{
     QString m_name;
     SOCKET m_socket;
-    Transceiver m_transceiver;
+    Transceiver * m_transceiver;
 public:
-    Client(SOCKET socket)
-        : m_socket(socket),
-          m_transceiver(std::move(socket))
+    Client(const SOCKET &socket)
+
     {
+        m_socket = socket;
+        m_transceiver = new Transceiver(socket);
         QString msg = "Hello from Server!";
         int SizeMsg = msg.size();
 
@@ -147,58 +151,109 @@ public:
 
     Client() = delete;
 
-    void SendMessage(const QString msg){
+    void SendMessage(const QString &msg){
 
         int SizeMsg = msg.size();
-        qDebug() << "MSG:" << msg << "SIZE:" << SizeMsg;
-        send(m_socket,(char*)SizeMsg,sizeof(int),NULL);
-        send(m_socket, msg.toStdString().c_str(), SizeMsg, NULL);
+        qDebug() << test_count++ << "MSG:" << msg << "SIZE:" << SizeMsg;
+
+        if(send(m_socket,reinterpret_cast<char*>(SizeMsg),sizeof(int),NULL) != SOCKET_ERROR){
+            send(m_socket, msg.toStdString().c_str(), SizeMsg, NULL);
+        }
+        else{
+            qDebug() << "SEND CLIENT ERROR:" << WSAGetLastError();
+        }
+
     };
 
     ~Client(){
        closesocket(m_socket);
+       delete m_transceiver;
     }
 };
 //------------------------------------------------------------------------------------
 class Server{
-    SOCKET m_socket;
+    SOCKET m_server_socket;
     SOCKADDR_IN m_addr;
     int m_addrSize;
-    QList<Client*> m_Clients;
+    QList<Client> m_Clients;
     bool m_stop{false};
     std::thread thr;
+
 public:
     Server()= delete;
-    Server(SOCKET socket,SOCKADDR_IN addr)
+    Server(const SOCKADDR_IN &addr)
     {
-        m_socket = socket;
+        m_server_socket = socket(AF_INET,SOCK_STREAM,NULL);
+        if (m_server_socket == INVALID_SOCKET) {
+            qDebug() << "Error initialization socket # " << WSAGetLastError();
+            closesocket(m_server_socket);
+            WSACleanup();
+            exit(1);
+        }
+        else
+            qDebug() << "Server socket initialization is OK";
+
         m_addr = addr;
         m_addrSize = sizeof(m_addr);
-        bind(m_socket,(SOCKADDR*)&m_addr,sizeof(m_addr));
-        listen(m_socket,SOMAXCONN);
+
+        int erStat = bind(m_server_socket,(SOCKADDR*)&m_addr,sizeof(m_addr));
+        if ( erStat != 0 ) {
+            qDebug() << "Error Socket binding to server info. Error # " << WSAGetLastError();
+            closesocket(m_server_socket);
+            WSACleanup();
+            exit(2);
+        }
+        else
+            qDebug() << "Binding socket to Server info is OK";
+
+        qDebug() << "SOMAXCONN:" << SOMAXCONN;
+        erStat = listen(m_server_socket, SOMAXCONN);
+        if ( erStat != 0 ) {
+            qDebug() << "Can't start to listen to. Error # " << WSAGetLastError();
+            closesocket(m_server_socket);
+            WSACleanup();
+            exit(3);
+        }
+        else {
+            qDebug() << "Listening...";
+        }
+        std::thread thr_Accept([&](){
+            while(!m_stop){
+                sockaddr_in clientInfo;
+                ZeroMemory(&clientInfo, sizeof(clientInfo));	// Initializing clientInfo structure
+                int clientInfo_size = sizeof(clientInfo);
+
+                SOCKET ClientConn = accept(m_server_socket, (sockaddr*)&clientInfo, &clientInfo_size);
+
+                if (ClientConn == INVALID_SOCKET) {
+                    qDebug() << "Client detected, but can't connect to a client. Error # " << WSAGetLastError();
+                    closesocket(m_server_socket);
+                    closesocket(ClientConn);
+                    WSACleanup();
+                    exit(4);
+                }
+                else {
+                    qDebug() << "Connection to a client established successfully";
+                    char clientIP[22];
+                    inet_ntop(AF_INET, &clientInfo.sin_addr, clientIP, INET_ADDRSTRLEN);	// Convert connected client's IP to standard string format
+                    qDebug() << "Client connected with IP address " << clientIP;
+                    m_Clients.push_back(Client(ClientConn));
+                }
+            }
+        });
+        thr_Accept.detach();
     }
     ~Server(){
         m_stop = true;
-        closesocket(m_socket);
+        closesocket(m_server_socket);
     }
     void Stop_server(){
         m_stop = true;
     }
-    void Run_server(){
-        m_stop = false;
-        std::thread thr([&](){
-            while(!m_stop){
-                SOCKET newConnection = accept( m_socket ,(SOCKADDR*) &m_addr, &m_addrSize);
-                m_Clients.push_back(new Client(newConnection));
-                //closesocket(newConnection);
-            }
-        });
 
-        thr.detach();
-    }
     void Send_message(const QString msg){
         for(auto client: m_Clients)
-            client->SendMessageW(msg);
+            client.SendMessageW(msg);
     }
 };
 //------------------------------------------------------------------------------------
@@ -220,14 +275,11 @@ int main(int argc, char *argv[])
     addr.sin_port = htons(1989);
     addr.sin_family = AF_INET;
 
-    // init discriptor
-    SOCKET sListen = socket(AF_INET,SOCK_STREAM,NULL);
 
-    Server server(sListen, addr);
-    server.Run_server();
+    Server server(addr);
 
     while(true){
-        Sleep(1000);
+        Sleep(2000);
         server.Send_message("Test message!");
     }
 
