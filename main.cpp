@@ -145,6 +145,7 @@ public:
     {
         m_socket = socket;
         m_Info = Info;
+
         m_transceiver = new Transceiver(socket);
 
         qDebug() << "Connection to a client established successfully";
@@ -157,7 +158,8 @@ public:
             ClientRecv();
         });
 
-        thr_Recv.join();
+        thr_Recv.detach();
+        qDebug() << "CLIENT: thr_Recv.detach() ";
 
     };
 
@@ -165,17 +167,20 @@ public:
 
     void ClientRecv(){
 
-        Sleep(1000);
-        int recv_size;
+        //Sleep(1000);
+        int recv_size{-2};
         QString full_msg;
         servBuff.resize(buffer_size);
 
-        while(true){
-            recv_size = recv(m_socket, servBuff.data(), servBuff.size(), NULL);
+        while(!is_delete){
+
+             recv_size = recv(m_socket, servBuff.data(), servBuff.size(), 0);
 
             if(recv_size == -1){
+                qDebug() << "ERROR_RECV: closesocket(Client)";
+                closesocket(m_socket);
                 is_delete = true;
-                return;
+                //continue;
             }
 
             if(recv_size == 0){
@@ -190,10 +195,10 @@ public:
                 for(int i = 0; i < recv_size;i++){
                     full_msg += servBuff.data()[i];
                 }
-
+                qDebug() << "SIZE_RECV" << recv_size << "full_msg:" << full_msg;
             }
 
-            if(recv_size < servBuff.size()){
+            if(recv_size < servBuff.size() && recv_size > 0){
                 for(int i = 0; i < recv_size;i++){
                     full_msg += servBuff.data()[i];
                 }
@@ -211,7 +216,7 @@ public:
         }
         qDebug() << test_count++ << "MSG:" << clientBuff.data() << "SIZE:" << clientBuff.size();
 
-        if(send(m_socket,clientBuff.data(),clientBuff.size(),NULL) != SOCKET_ERROR){
+        if(send(m_socket,clientBuff.data(),clientBuff.size(),0) != SOCKET_ERROR){
             return true;
         }
         else{
@@ -237,7 +242,7 @@ class Server{
     SOCKET m_server_socket;
     SOCKADDR_IN m_addr;
     int m_addrSize;
-    QList<Client> m_Clients;
+    QVector<Client> m_Clients;
     bool m_stop{false};
     std::thread thr;
 
@@ -279,6 +284,23 @@ public:
         else {
             qDebug() << "Listening...";
         }
+
+        std::thread thr_Check_Clients([&](){
+            while(!m_stop){
+                for(QVector<Client>::Iterator it = m_Clients.begin(); it != m_Clients.end();)
+                {
+                    if(it->Is_DELETE())
+                    {
+                        it = m_Clients.erase(it);
+                    }
+                    else it++;
+                }
+            }
+        });
+
+        thr_Check_Clients.detach();
+        qDebug() << "thr_Check_Clients.detach() ";
+
         std::thread thr_Accept_Clients([&](){
             while(!m_stop){
                 sockaddr_in ClientInfo;
@@ -295,17 +317,19 @@ public:
                     exit(4);
                 }
                 else {
-                    qDebug() << "Connection to a client established successfully";
-                    char clientIP[22];
-                    inet_ntop(AF_INET, &ClientInfo.sin_addr, clientIP, INET_ADDRSTRLEN);	// Convert connected client's IP to standard string format
-                    qDebug() << "Client connected with IP address " << clientIP;
-                    qDebug() << "Client discriptor " << ClientConn;
+                    //qDebug() << "Connection to a client established successfully";
+                    //char clientIP[22];
+                    //inet_ntop(AF_INET, &ClientInfo.sin_addr, clientIP, INET_ADDRSTRLEN);	// Convert connected client's IP to standard string format
+                    //qDebug() << "Client connected with IP address " << clientIP;
+                    //qDebug() << "Client discriptor " << ClientConn;
                     m_Clients.push_back(Client(ClientConn, ClientInfo));
                 }
             }
         });
-        thr_Accept_Clients.detach();
 
+
+        thr_Accept_Clients.detach();
+        qDebug() << "thr_Accept_Clients.detach() ";
     }
     ~Server(){
         m_stop = true;
@@ -317,18 +341,8 @@ public:
 
     void Send_message(const QString msg){
         for(auto client: m_Clients)
-            if(!client.SendMessageW(msg)){
-                continue;
-            }
+            client.SendMessageW(msg);
 
-        for(QList<Client>::Iterator it = m_Clients.begin(); it != m_Clients.end();)
-        {
-            if(it->Is_DELETE())
-            {
-                it = m_Clients.erase(it);
-            }
-            else it++;
-        }
     }
 };
 //------------------------------------------------------------------------------------
@@ -357,11 +371,11 @@ int main(int argc, char *argv[])
     int stop = 50;
     while(true){
         Sleep(2000);
-        server.Send_message("Test message!");
+        //server.Send_message("Test message!");
         stop--;
     }
 
-    server.Stop_server();
+    //server.Stop_server();
 
     // Cleanup winsock
     WSACleanup();
